@@ -20,7 +20,6 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import RepeatedStratifiedKFold, GroupKFold, TimeSeriesSplit
 from .model import (
-    XGBoostEstimator,
     XGBoostSklearnEstimator,
     RandomForestEstimator,
     LGBMEstimator,
@@ -44,10 +43,7 @@ def get_estimator_class(task, estimator_name):
     """when adding a new learner, need to add an elif branch"""
 
     if "xgboost" == estimator_name:
-        if "regression" == task:
-            estimator_class = XGBoostEstimator
-        else:
-            estimator_class = XGBoostSklearnEstimator
+        estimator_class = XGBoostSklearnEstimator
     elif "rf" == estimator_name:
         estimator_class = RandomForestEstimator
     elif "lgbm" == estimator_name:
