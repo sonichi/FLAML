@@ -88,7 +88,7 @@ automl_settings = {
     "time_budget": 10,  # in seconds
     "metric": 'accuracy',
     "task": 'classification',
-    "log_file_name": "test/iris.log",
+    "log_file_name": "iris.log",
 }
 X_train, y_train = load_iris(return_X_y=True)
 # Train with labeled input data
@@ -96,8 +96,8 @@ automl.fit(X_train=X_train, y_train=y_train,
            **automl_settings)
 # Predict
 print(automl.predict_proba(X_train))
-# Export the best model
-print(automl.model)
+# Print the best model
+print(automl.model.estimator)
 ```
 
 * A basic regression example.
@@ -112,7 +112,7 @@ automl_settings = {
     "time_budget": 10,  # in seconds
     "metric": 'r2',
     "task": 'regression',
-    "log_file_name": "test/california.log",
+    "log_file_name": "california.log",
 }
 X_train, y_train = fetch_california_housing(return_X_y=True)
 # Train with labeled input data
@@ -120,11 +120,11 @@ automl.fit(X_train=X_train, y_train=y_train,
            **automl_settings)
 # Predict
 print(automl.predict(X_train))
-# Export the best model
-print(automl.model)
+# Print the best model
+print(automl.model.estimator)
 ```
 
-* Time series forecasting.
+* A basic time series forecasting example.
 
 ```python
 # pip install flaml[ts_forecast]
@@ -137,7 +137,7 @@ automl.fit(X_train=X_train[:72],  # a single column of timestamp
            y_train=y_train,  # value for each timestamp
            period=12,  # time horizon to forecast, e.g., 12 months
            task='ts_forecast', time_budget=15,  # time budget in seconds
-           log_file_name="test/ts_forecast.log",
+           log_file_name="ts_forecast.log",
           )
 print(automl.predict(X_train[72:]))
 ```
