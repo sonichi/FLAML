@@ -17,11 +17,12 @@ from sklearn.model_selection import (
     GroupShuffleSplit,
 )
 from sklearn.utils import shuffle
+from sklearn.base import BaseEstimator
 import pandas as pd
 import logging
 from typing import List, Union
 from pandas import DataFrame
-from .nlp.utils import _is_nlp_task
+from .data import _is_nlp_task
 
 from .ml import (
     compute_estimator,
@@ -160,6 +161,8 @@ class SearchState:
                 self.trained_estimator.cleanup()
             if trained_estimator:
                 self.trained_estimator = trained_estimator
+        elif trained_estimator:
+            trained_estimator.cleanup()
         self.metric_for_logging = metric_for_logging
         self.val_loss, self.config = obj, config
 
@@ -348,6 +351,9 @@ class AutoMLState:
             estimator, train_time = result["estimator"], result["train_time"]
 
         else:
+            if _is_nlp_task(self.task):
+                use_ray = self.fit_kwargs.get("use_ray")
+                self.fit_kwargs["use_ray"] = False
             estimator, train_time = train_estimator(
                 X_train=sampled_X_train,
                 y_train=sampled_y_train,
@@ -359,6 +365,11 @@ class AutoMLState:
                 budget=budget,
                 fit_kwargs=self.fit_kwargs,
             )
+            if _is_nlp_task(self.task):
+                if use_ray:
+                    self.fit_kwargs["use_ray"] = use_ray
+                else:
+                    del self.fit_kwargs["use_ray"]
         if sampled_weight is not None:
             self.fit_kwargs["sample_weight"] = weight
         return estimator, train_time
@@ -376,7 +387,7 @@ def size(state: AutoMLState, config: dict) -> float:
     return learner_class.size(config)
 
 
-class AutoML:
+class AutoML(BaseEstimator):
     """The AutoML class.
 
     Example:
@@ -415,14 +426,38 @@ class AutoML:
                 .. code-block:: python
 
                     def custom_metric(
-                        X_test, y_test, estimator, labels,
-                        X_train, y_train, weight_test=None, weight_train=None,
-                        config=None, groups_test=None, groups_train=None,
+                        X_val, y_val, estimator, labels,
+                        X_train, y_train, weight_val=None, weight_train=None,
+                        config=None, groups_val=None, groups_train=None,
                     ):
                         return metric_to_minimize, metrics_to_log
 
                 which returns a float number as the minimization objective,
-                and a dictionary as the metrics to log.
+                and a dictionary as the metrics to log. E.g.,
+
+                .. code-block:: python
+
+                    def custom_metric(
+                        X_val, y_val, estimator, labels,
+                        X_train, y_train, weight_val=None, weight_train=None,
+                        **args,
+                    ):
+                        from sklearn.metrics import log_loss
+                        import time
+
+                        start = time.time()
+                        y_pred = estimator.predict_proba(X_val)
+                        pred_time = (time.time() - start) / len(X_val)
+                        val_loss = log_loss(y_val, y_pred, labels=labels, sample_weight=weight_val)
+                        y_pred = estimator.predict_proba(X_train)
+                        train_loss = log_loss(y_train, y_pred, labels=labels, sample_weight=weight_train)
+                        alpha = 0.5
+                        return val_loss * (1 + alpha) - alpha * train_loss, {
+                            "val_loss": val_loss,
+                            "train_loss": train_loss,
+                            "pred_time": pred_time,
+                        }
+
             task: A string of the task type, e.g.,
                 'classification', 'regression', 'ts_forecast', 'rank',
                 'seq-classification', 'seq-regression'.
@@ -435,7 +470,7 @@ class AutoML:
 
                 .. code-block:: python
 
-                    ['lgbm', 'xgboost', 'catboost', 'rf', 'extra_tree']
+                    ['lgbm', 'xgboost', 'xgb_limitdepth', 'catboost', 'rf', 'extra_tree']
 
             time_budget: A float number of the time budget in seconds.
                 Use -1 if no time limit.
@@ -562,6 +597,12 @@ class AutoML:
         settings["append_log"] = settings.get("append_log", False)
         settings["min_sample_size"] = settings.get("min_sample_size", MIN_SAMPLE_TRAIN)
         settings["use_ray"] = settings.get("use_ray", False)
+        self._estimator_type = (
+            "classifier" if settings["task"] in CLASSIFICATION else "regressor"
+        )
+
+    def get_params(self, deep=False):
+        return self._settings.copy()
 
     @property
     def config_history(self):
@@ -684,32 +725,6 @@ class AutoML:
                 "No estimator is trained. Please run fit with enough budget."
             )
             return None
-        if isinstance(X_test, List) and isinstance(X_test[0], List):
-            unzipped_X_test = [x for x in zip(*X_test)]
-            try:
-                X_test = DataFrame(
-                    {
-                        self._transformer._str_columns[idx]: unzipped_X_test[idx]
-                        for idx in range(len(unzipped_X_test))
-                    }
-                )
-            except IndexError:
-                raise IndexError(
-                    "Test data contains more columns than training data, exiting"
-                )
-        elif isinstance(X_test, List):
-            try:
-                X_test = DataFrame(
-                    {
-                        self._transformer._str_columns[idx]: [X_test[idx]]
-                        for idx in range(len(X_test))
-                    }
-                )
-            except IndexError:
-                raise IndexError(
-                    "Test data contains more columns than training data, exiting"
-                )
-
         X_test = self._preprocess(X_test)
         y_pred = estimator.predict(X_test)
         if y_pred.ndim > 1 and isinstance(y_pred, np.ndarray):
@@ -732,18 +747,41 @@ class AutoML:
             A numpy array of shape n * c. c is the  # classes. Each element at
             (i, j) is the probability for instance i to be in class j.
         """
+        estimator = getattr(self, "_trained_estimator", None)
+        if estimator is None:
+            logger.warning(
+                "No estimator is trained. Please run fit with enough budget."
+            )
+            return None
         X_test = self._preprocess(X_test)
         proba = self._trained_estimator.predict_proba(X_test)
         return proba
 
     def _preprocess(self, X):
-
-        if isinstance(X, int):
+        if isinstance(X, List):
+            try:
+                if isinstance(X[0], List):
+                    X = [x for x in zip(*X)]
+                X = DataFrame(
+                    dict(
+                        [
+                            (self._transformer._str_columns[idx], X[idx])
+                            if isinstance(X[0], List)
+                            else (self._transformer._str_columns[idx], [X[idx]])
+                            for idx in range(len(X))
+                        ]
+                    )
+                )
+            except IndexError:
+                raise IndexError(
+                    "Test data contains more columns than training data, exiting"
+                )
+        elif isinstance(X, int):
             return X
+        elif issparse(X):
+            X = X.tocsr()
         if self._state.task == TS_FORECAST:
             X = pd.DataFrame(X)
-        if issparse(X):
-            X = X.tocsr()
         if self._transformer:
             X = self._transformer.transform(X)
         return X
@@ -1256,6 +1294,8 @@ class AutoML:
             self._settings.get("auto_augment") if auto_augment is None else auto_augment
         )
         self._state.task = TS_FORECAST if task == FORECAST else task
+        self._estimator_type = "classifier" if task in CLASSIFICATION else "regressor"
+
         self._state.fit_kwargs = fit_kwargs
         self._validate_data(X_train, y_train, dataframe, label, groups=groups)
 
@@ -1311,7 +1351,6 @@ class AutoML:
         )
         # Partially copied from fit() function
         # Initilize some attributes required for retrain_from_log
-        self._state.task = task
         self._decide_split_type(split_type)
         if record_id >= 0:
             eval_method = "cv"
@@ -1640,14 +1679,38 @@ class AutoML:
                 .. code-block:: python
 
                     def custom_metric(
-                        X_test, y_test, estimator, labels,
-                        X_train, y_train, weight_test=None, weight_train=None,
-                        config=None, groups_test=None, groups_train=None,
+                        X_val, y_val, estimator, labels,
+                        X_train, y_train, weight_val=None, weight_train=None,
+                        config=None, groups_val=None, groups_train=None,
                     ):
                         return metric_to_minimize, metrics_to_log
 
                 which returns a float number as the minimization objective,
-                and a dictionary as the metrics to log.
+                and a dictionary as the metrics to log. E.g.,
+
+                .. code-block:: python
+
+                    def custom_metric(
+                        X_val, y_val, estimator, labels,
+                        X_train, y_train, weight_val=None, weight_train=None,
+                        **args,
+                    ):
+                        from sklearn.metrics import log_loss
+                        import time
+
+                        start = time.time()
+                        y_pred = estimator.predict_proba(X_val)
+                        pred_time = (time.time() - start) / len(X_val)
+                        val_loss = log_loss(y_val, y_pred, labels=labels, sample_weight=weight_val)
+                        y_pred = estimator.predict_proba(X_train)
+                        train_loss = log_loss(y_train, y_pred, labels=labels, sample_weight=weight_train)
+                        alpha = 0.5
+                        return val_loss * (1 + alpha) - alpha * train_loss, {
+                            "val_loss": val_loss,
+                            "train_loss": train_loss,
+                            "pred_time": pred_time,
+                        }
+
             task: A string of the task type, e.g.,
                 'classification', 'regression', 'ts_forecast', 'rank',
                 'seq-classification', 'seq-regression'.
@@ -1660,7 +1723,7 @@ class AutoML:
 
                 .. code-block:: python
 
-                    ['lgbm', 'xgboost', 'catboost', 'rf', 'extra_tree']
+                    ['lgbm', 'xgboost', 'xgb_limitdepth', 'catboost', 'rf', 'extra_tree']
 
             time_budget: A float number of the time budget in seconds.
                 Use -1 if no time limit.
@@ -1766,6 +1829,7 @@ class AutoML:
 
         self._state._start_time_flag = self._start_time_flag = time.time()
         task = task or self._settings.get("task")
+        self._estimator_type = "classifier" if task in CLASSIFICATION else "regressor"
         time_budget = time_budget or self._settings.get("time_budget")
         n_jobs = n_jobs or self._settings.get("n_jobs")
         gpu_per_trial = (
@@ -1856,6 +1920,7 @@ class AutoML:
             _ch = logging.StreamHandler()
             _ch.setFormatter(logger_formatter)
             logger.addHandler(_ch)
+        logger.info(f"task = {task}")
         self._decide_split_type(split_type)
         logger.info(f"Data split method: {self._split_type}")
         if eval_method == "auto" or self._state.X_val is not None:
@@ -1891,6 +1956,7 @@ class AutoML:
 
         if _is_nlp_task(self._state.task):
             self._state.fit_kwargs["metric"] = metric
+            self._state.fit_kwargs["use_ray"] = self._use_ray
 
         self._sample = (
             sample
@@ -2113,6 +2179,8 @@ class AutoML:
             num_samples=self._max_iter,
             verbose=max(self.verbose - 2, 0),
             raise_on_failed_trial=False,
+            keep_checkpoints_num=1,
+            checkpoint_score_attr="min-val_loss",
         )
         # logger.info([trial.last_result for trial in analysis.trials])
         trials = sorted(
