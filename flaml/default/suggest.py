@@ -27,5 +27,6 @@ def suggest_config(task, X, y, portfolio):
     dist, ind = nn.kneighbors(feature.reshape(1, -1), return_distance=True)
     logger.info(f"metafeature distance: {dist.item()}")
     ind = int(ind.item())
-    choice = int(neighbors[ind]["choice"][0])
+    choice = neighbors[ind]["choice"]
+    choice = int(choice[0]) if isinstance(choice, list) else int(choice)
     return portfolio["portfolio"][choice]
