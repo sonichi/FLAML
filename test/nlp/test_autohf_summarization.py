@@ -2,10 +2,16 @@ import sys
 import pytest
 import requests
 from utils import get_toy_data_summarization, get_automl_settings
+import os
+import shutil
 
 
-@pytest.mark.skipif(sys.platform == "darwin", reason="do not run on mac os")
+@pytest.mark.skipif(
+    sys.platform in ["darwin", "win32"] or sys.version < "3.7",
+    reason="do not run on mac os, windows or py3.6",
+)
 def test_summarization():
+    # TODO: manual test for how effective postprocess_seq2seq_prediction_label is
     from flaml import AutoML
 
     X_train, y_train, X_val, y_val, X_test = get_toy_data_summarization()
@@ -43,6 +49,12 @@ def test_summarization():
         **automl_settings
     )
     automl.predict(X_test)
+
+    if os.path.exists("test/data/output/"):
+        try:
+            shutil.rmtree("test/data/output/")
+        except PermissionError:
+            print("PermissionError when deleting test/data/output/")
 
 
 if __name__ == "__main__":

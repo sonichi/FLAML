@@ -1,10 +1,10 @@
 import sys
 from openml.exceptions import OpenMLServerException
-from requests.exceptions import ChunkedEncodingError
+from requests.exceptions import ChunkedEncodingError, SSLError
 
 
 def test_automl(budget=5, dataset_format="dataframe", hpo_method=None):
-    from flaml.data import load_openml_dataset
+    from flaml.automl.data import load_openml_dataset
     import urllib3
 
     performance_check_budget = 600
@@ -15,6 +15,11 @@ def test_automl(budget=5, dataset_format="dataframe", hpo_method=None):
         and "3.9" in sys.version
     ):
         budget = performance_check_budget  # revise the buget on macos
+    if budget == performance_check_budget:
+        budget = None
+        max_iter = 60
+    else:
+        max_iter = None
     try:
         X_train, X_test, y_train, y_test = load_openml_dataset(
             dataset_id=1169, data_dir="test/", dataset_format=dataset_format
@@ -23,6 +28,7 @@ def test_automl(budget=5, dataset_format="dataframe", hpo_method=None):
         OpenMLServerException,
         ChunkedEncodingError,
         urllib3.exceptions.ReadTimeoutError,
+        SSLError,
     ) as e:
         print(e)
         return
@@ -32,11 +38,21 @@ def test_automl(budget=5, dataset_format="dataframe", hpo_method=None):
     automl = AutoML()
     settings = {
         "time_budget": budget,  # total running time in seconds
+        "max_iter": max_iter,  # maximum number of iterations
         "metric": "accuracy",  # primary metrics can be chosen from: ['accuracy','roc_auc','roc_auc_ovr','roc_auc_ovo','f1','log_loss','mae','mse','r2']
         "task": "classification",  # task type
         "log_file_name": "airlines_experiment.log",  # flaml log file
         "seed": 7654321,  # random seed
         "hpo_method": hpo_method,
+        "log_type": "all",
+        "estimator_list": [
+            "lgbm",
+            "xgboost",
+            "xgb_limitdepth",
+            "rf",
+            "extra_tree",
+        ],  # list of ML learners
+        "eval_method": "holdout",
     }
     """The main flaml automl API"""
     automl.fit(X_train=X_train, y_train=y_train, **settings)
@@ -48,6 +64,7 @@ def test_automl(budget=5, dataset_format="dataframe", hpo_method=None):
         "Training duration of best run: {0:.4g} s".format(automl.best_config_train_time)
     )
     print(automl.model.estimator)
+    print(automl.best_config_per_estimator)
     print("time taken to find best model:", automl.time_to_find_best_model)
     """ pickle and save the automl object """
     import pickle
@@ -60,7 +77,7 @@ def test_automl(budget=5, dataset_format="dataframe", hpo_method=None):
     print("True labels", y_test)
     y_pred_proba = automl.predict_proba(X_test)[:, 1]
     """ compute different metric values on testing dataset """
-    from flaml.ml import sklearn_metric_loss_score
+    from flaml.automl.ml import sklearn_metric_loss_score
 
     accuracy = 1 - sklearn_metric_loss_score("accuracy", y_pred, y_test)
     print("accuracy", "=", accuracy)
@@ -68,9 +85,9 @@ def test_automl(budget=5, dataset_format="dataframe", hpo_method=None):
         "roc_auc", "=", 1 - sklearn_metric_loss_score("roc_auc", y_pred_proba, y_test)
     )
     print("log_loss", "=", sklearn_metric_loss_score("log_loss", y_pred_proba, y_test))
-    if budget >= performance_check_budget:
+    if budget is None:
         assert accuracy >= 0.669, "the accuracy of flaml should be larger than 0.67"
-    from flaml.data import get_output_from_log
+    from flaml.automl.data import get_output_from_log
 
     (
         time_history,
@@ -84,7 +101,9 @@ def test_automl(budget=5, dataset_format="dataframe", hpo_method=None):
     print(automl.resource_attr)
     print(automl.max_resource)
     print(automl.min_resource)
-    if budget < performance_check_budget:
+    print(automl.feature_names_in_)
+    print(automl.feature_importances_)
+    if budget is not None:
         automl.fit(X_train=X_train, y_train=y_train, ensemble=True, **settings)
 
 
@@ -92,19 +111,21 @@ def test_automl_array():
     test_automl(5, "array", "bs")
 
 
-def test_mlflow():
-    import subprocess
-    import sys
+def _test_nobudget():
+    # needs large RAM to run this test
+    test_automl(-1)
 
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "mlflow"])
+
+def test_mlflow():
+    # subprocess.check_call([sys.executable, "-m", "pip", "install", "mlflow"])
     import mlflow
-    from flaml.data import load_openml_task
+    from flaml.automl.data import load_openml_task
 
     try:
         X_train, X_test, y_train, y_test = load_openml_task(
             task_id=7592, data_dir="test/"
         )
-    except (OpenMLServerException, ChunkedEncodingError) as e:
+    except (OpenMLServerException, ChunkedEncodingError, SSLError) as e:
         print(e)
         return
     """ import AutoML class from flaml package """
@@ -118,6 +139,7 @@ def test_mlflow():
         "task": "classification",  # task type
         "sample": False,  # whether to subsample training data
         "log_file_name": "adult.log",  # flaml log file
+        "learner_selector": "roundrobin",
     }
     mlflow.set_experiment("flaml")
     with mlflow.start_run() as run:
@@ -137,6 +159,24 @@ def test_mlflow():
         print(automl.predict_proba(X_test))
     except ImportError:
         pass
+
+
+def test_mlflow_iris():
+    from sklearn.datasets import load_iris
+    import mlflow
+    from flaml import AutoML
+
+    with mlflow.start_run():
+        automl = AutoML()
+        automl_settings = {
+            "time_budget": 2,  # in seconds
+            "metric": "accuracy",
+            "task": "classification",
+            "log_file_name": "iris.log",
+        }
+        X_train, y_train = load_iris(return_X_y=True)
+        automl.fit(X_train=X_train, y_train=y_train, **automl_settings)
+
     # subprocess.check_call([sys.executable, "-m", "pip", "uninstall", "mlflow"])
 
 

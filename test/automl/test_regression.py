@@ -6,8 +6,8 @@ from sklearn.datasets import (
 )
 
 from flaml import AutoML
-from flaml.data import get_output_from_log
-from flaml.model import XGBoostEstimator
+from flaml.automl.data import get_output_from_log
+from flaml.automl.model import XGBoostEstimator
 
 
 def logregobj(preds, dtrain):
@@ -56,6 +56,7 @@ class TestRegression(unittest.TestCase):
         y_pred = automl.predict(X_train)
         print(y_pred)
         print(automl.model.estimator)
+        n_iter = automl.model.estimator.get_params("n_estimators")
         print(automl.config_history)
         print(automl.best_model_for_estimator("xgboost"))
         print(automl.best_iteration)
@@ -86,15 +87,19 @@ class TestRegression(unittest.TestCase):
         )
         print(automl.model.estimator)
         y_pred2 = automl.predict(X_train)
-        assert (y_pred == y_pred2).all()
+        # In some rare case, the last config is early stopped and it's the best config. But the logged config's n_estimator is not reduced.
+        assert (
+            n_iter != automl.model.estimator.get_params("n_estimator")
+            or (y_pred == y_pred2).all()
+        )
 
     def test_sparse_matrix_regression(self):
         X_train = scipy.sparse.random(300, 900, density=0.0001)
         y_train = np.random.uniform(size=300)
         X_val = scipy.sparse.random(100, 900, density=0.0001)
         y_val = np.random.uniform(size=100)
-        automl_experiment = AutoML()
-        automl_settings = {
+        automl = AutoML()
+        settings = {
             "time_budget": 2,
             "metric": "mae",
             "task": "regression",
@@ -105,23 +110,34 @@ class TestRegression(unittest.TestCase):
             "verbose": 0,
             "early_stop": True,
         }
-        automl_experiment.fit(
-            X_train=X_train,
-            y_train=y_train,
-            X_val=X_val,
-            y_val=y_val,
-            **automl_settings
+        automl.fit(
+            X_train=X_train, y_train=y_train, X_val=X_val, y_val=y_val, **settings
         )
-        assert automl_experiment._state.X_val.shape == X_val.shape
-        print(automl_experiment.predict(X_train))
-        print(automl_experiment.model)
-        print(automl_experiment.config_history)
-        print(automl_experiment.best_model_for_estimator("rf"))
-        print(automl_experiment.best_iteration)
-        print(automl_experiment.best_estimator)
-        print(automl_experiment.best_config)
-        print(automl_experiment.best_loss)
-        print(automl_experiment.best_config_train_time)
+        assert automl._state.X_val.shape == X_val.shape
+        print(automl.predict(X_train))
+        print(automl.model)
+        print(automl.config_history)
+        print(automl.best_model_for_estimator("rf"))
+        print(automl.best_iteration)
+        print(automl.best_estimator)
+        print(automl.best_config)
+        print(automl.best_loss)
+        print(automl.best_config_train_time)
+
+        settings.update(
+            {
+                "estimator_list": ["catboost"],
+                "keep_search_state": False,
+                "model_history": False,
+                "use_best_model": False,
+                "time_budget": None,
+                "max_iter": 2,
+                "custom_hp": {"catboost": {"n_estimators": {"domain": 100}}},
+            }
+        )
+        automl.fit(
+            X_train=X_train, y_train=y_train, X_val=X_val, y_val=y_val, **settings
+        )
 
     def test_parallel(self, hpo_method=None):
         automl_experiment = AutoML()

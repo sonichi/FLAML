@@ -1,10 +1,10 @@
-import unittest
-
+from urllib.error import URLError
 from sklearn.datasets import fetch_openml
 from sklearn.model_selection import train_test_split
-from flaml.automl import AutoML
+from sklearn.externals._arff import ArffException
+from functools import partial
+from flaml.automl import AutoML, size
 from flaml import tune
-
 
 dataset = "credit-g"
 
@@ -21,14 +21,13 @@ def test_metric_constraints():
         "log_type": "all",
         "retrain_full": "budget",
         "keep_search_state": True,
-        "time_budget": 1,
+        "time_budget": 2,
         "pred_time_limit": 5.1e-05,
     }
-    from sklearn.externals._arff import ArffException
 
     try:
         X, y = fetch_openml(name=dataset, return_X_y=True)
-    except (ArffException, ValueError):
+    except (ArffException, ValueError, URLError):
         from sklearn.datasets import load_wine
 
         X, y = load_wine(return_X_y=True)
@@ -42,10 +41,6 @@ def test_metric_constraints():
     config = automl.best_config.copy()
     config["learner"] = automl.best_estimator
     automl.trainable(config)
-
-    from flaml.automl import size
-    from functools import partial
-
     print("metric constraints used in automl", automl.metric_constraints)
 
     analysis = tune.run(
@@ -60,7 +55,9 @@ def test_metric_constraints():
         min_resource=automl.min_resource,
         max_resource=automl.max_resource,
         time_budget_s=automl._state.time_budget,
-        config_constraints=[(partial(size, automl._state), "<=", automl._mem_thres)],
+        config_constraints=[
+            (partial(size, automl._state.learner_classes), "<=", automl._mem_thres)
+        ],
         metric_constraints=automl.metric_constraints,
         num_samples=5,
     )
@@ -117,7 +114,6 @@ def test_metric_constraints_custom():
             ("val_train_loss_gap", "<=", 0.05),
         ],
     }
-    from sklearn.externals._arff import ArffException
 
     try:
         X, y = fetch_openml(name=dataset, return_X_y=True)
@@ -151,11 +147,8 @@ def test_metric_constraints_custom():
     config = automl.best_config.copy()
     config["learner"] = automl.best_estimator
     automl.trainable(config)
-
-    from flaml.automl import size
-    from functools import partial
-
     print("metric constraints in automl", automl.metric_constraints)
+
     analysis = tune.run(
         automl.trainable,
         automl.search_space,
@@ -168,7 +161,9 @@ def test_metric_constraints_custom():
         min_resource=automl.min_resource,
         max_resource=automl.max_resource,
         time_budget_s=automl._state.time_budget,
-        config_constraints=[(partial(size, automl._state), "<=", automl._mem_thres)],
+        config_constraints=[
+            (partial(size, automl._state.learner_classes), "<=", automl._mem_thres)
+        ],
         metric_constraints=automl.metric_constraints,
         num_samples=5,
     )
@@ -176,4 +171,5 @@ def test_metric_constraints_custom():
 
 
 if __name__ == "__main__":
-    unittest.main()
+    test_metric_constraints()
+    test_metric_constraints_custom()

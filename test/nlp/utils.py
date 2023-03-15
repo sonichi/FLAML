@@ -70,23 +70,19 @@ def get_toy_data_seqclassification():
     return X_train, y_train, X_val, y_val, X_test
 
 
-def get_toy_data_multiclassclassification():
+def get_toy_data_binclassification():
     train_data = {
         "text": [
             "i didnt feel humiliated",
             "i can go from feeling so hopeless to so damned hopeful just from being around someone who cares and is awake",
-            "im grabbing a minute to post i feel greedy wrong",
             "i am ever feeling nostalgic about the fireplace i will know that it is still on the property",
-            "i am feeling grouchy",
             "ive been feeling a little burdened lately wasnt sure why that was",
-            "ive been taking or milligrams or times recommended amount and ive fallen asleep a lot faster but i also feel like so funny",
-            "i feel as confused about life as a teenager or as jaded as a year old man",
             "i have been with petronas for years i feel that petronas has performed well and made a huge profit",
             "i feel romantic too",
             "i feel like i have to make the suffering i m seeing mean something",
             "i do feel that running is a divine experience and that i can expect to have some type of spiritual encounter",
         ],
-        "label": [0, 0, 3, 2, 3, 0, 5, 4, 1, 2, 0, 1],
+        "label": [0, 0, 1, 0, 1, 1, 0, 1],
     }
     train_dataset = pd.DataFrame(train_data)
 
@@ -95,9 +91,84 @@ def get_toy_data_multiclassclassification():
             "i think it s the easiest time of year to feel dissatisfied",
             "i feel low energy i m just thirsty",
             "i have immense sympathy with the general point but as a possible proto writer trying to find time to write in the corners of life and with no sign of an agent let alone a publishing contract this feels a little precious",
-            "i do not feel reassured anxiety is on each side",
         ],
-        "label": [3, 0, 1, 1],
+        "label": [0, 1, 1],
+    }
+    dev_dataset = pd.DataFrame(dev_data)
+
+    custom_sent_keys = ["text"]
+    label_key = "label"
+
+    X_train = train_dataset[custom_sent_keys]
+    y_train = train_dataset[label_key]
+
+    X_val = dev_dataset[custom_sent_keys]
+    y_val = dev_dataset[label_key]
+
+    return X_train, y_train, X_val, y_val
+
+
+def get_toy_data_regression():
+    train_data = {
+        "text": [
+            "i didnt feel humiliated",
+            "i can go from feeling so hopeless to so damned hopeful just from being around someone who cares and is awake",
+            "i am ever feeling nostalgic about the fireplace i will know that it is still on the property",
+            "ive been feeling a little burdened lately wasnt sure why that was",
+            "i have been with petronas for years i feel that petronas has performed well and made a huge profit",
+            "i feel romantic too",
+            "i feel like i have to make the suffering i m seeing mean something",
+            "i do feel that running is a divine experience and that i can expect to have some type of spiritual encounter",
+        ],
+        "label": [1.0, 1.0, 3.0, 1.0, 5.0, 5.0, 1.0, 3.0],
+    }
+    train_dataset = pd.DataFrame(train_data)
+
+    dev_data = {
+        "text": [
+            "i think it s the easiest time of year to feel dissatisfied",
+            "i feel low energy i m just thirsty",
+            "i have immense sympathy with the general point but as a possible proto writer trying to find time to write in the corners of life and with no sign of an agent let alone a publishing contract this feels a little precious",
+        ],
+        "label": [1.0, 3.0, 3.0],
+    }
+    dev_dataset = pd.DataFrame(dev_data)
+
+    custom_sent_keys = ["text"]
+    label_key = "label"
+
+    X_train = train_dataset[custom_sent_keys]
+    y_train = train_dataset[label_key]
+
+    X_val = dev_dataset[custom_sent_keys]
+    y_val = dev_dataset[label_key]
+
+    return X_train, y_train, X_val, y_val
+
+
+def get_toy_data_multiclassclassification():
+    train_data = {
+        "text": [
+            "i didnt feel humiliated",
+            "i can go from feeling so hopeless to so damned hopeful just from being around someone who cares and is awake",
+            "i am ever feeling nostalgic about the fireplace i will know that it is still on the property",
+            "ive been feeling a little burdened lately wasnt sure why that was",
+            "i have been with petronas for years i feel that petronas has performed well and made a huge profit",
+            "i feel romantic too",
+            "i feel like i have to make the suffering i m seeing mean something",
+            "i do feel that running is a divine experience and that i can expect to have some type of spiritual encounter",
+        ],
+        "label": [0, 0, 2, 0, 1, 2, 0, 1],
+    }
+    train_dataset = pd.DataFrame(train_data)
+
+    dev_data = {
+        "text": [
+            "i think it s the easiest time of year to feel dissatisfied",
+            "i feel low energy i m just thirsty",
+            "i have immense sympathy with the general point but as a possible proto writer trying to find time to write in the corners of life and with no sign of an agent let alone a publishing contract this feels a little precious",
+        ],
+        "label": [0, 1, 1],
     }
     dev_dataset = pd.DataFrame(dev_data)
 
@@ -406,7 +477,8 @@ def get_toy_data_summarization():
     return X_train, y_train, X_val, y_val, X_test
 
 
-def get_toy_data_tokenclassification():
+def get_toy_data_tokenclassification_idlabel():
+    # test token classification when the labels are ids
     train_data = {
         "chunk_tags": [
             [11, 21, 11, 12, 21, 22, 11, 12, 0],
@@ -1116,8 +1188,392 @@ def get_toy_data_tokenclassification():
     return X_train, y_train, X_val, y_val
 
 
-def get_automl_settings(estimator_name="transformer"):
+def get_toy_data_tokenclassification_tokenlabel():
+    # test token classification when the labels are tokens
+    train_data = {
+        "id": ["0", "1", "2", "3"],
+        "ner_tags": [
+            ["B-ORG", "O", "B-MISC", "O", "O", "O", "B-MISC", "O", "O"],
+            ["B-PER", "I-PER"],
+            ["B-LOC", "O"],
+            [
+                "O",
+                "B-ORG",
+                "I-ORG",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "B-MISC",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "B-MISC",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+            ],
+        ],
+        "tokens": [
+            [
+                "EU",
+                "rejects",
+                "German",
+                "call",
+                "to",
+                "boycott",
+                "British",
+                "lamb",
+                ".",
+            ],
+            ["Peter", "Blackburn"],
+            ["BRUSSELS", "1996-08-22"],
+            [
+                "The",
+                "European",
+                "Commission",
+                "said",
+                "on",
+                "Thursday",
+                "it",
+                "disagreed",
+                "with",
+                "German",
+                "advice",
+                "to",
+                "consumers",
+                "to",
+                "shun",
+                "British",
+                "lamb",
+                "until",
+                "scientists",
+                "determine",
+                "whether",
+                "mad",
+                "cow",
+                "disease",
+                "can",
+                "be",
+                "transmitted",
+                "to",
+                "sheep",
+                ".",
+            ],
+        ],
+    }
 
+    dev_data = {
+        "id": ["4", "5", "6", "7"],
+        "ner_tags": [
+            [
+                "B-LOC",
+                "O",
+                "O",
+                "O",
+                "O",
+                "B-ORG",
+                "I-ORG",
+                "O",
+                "O",
+                "O",
+                "B-PER",
+                "I-PER",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "B-LOC",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+            ],
+            [
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "B-ORG",
+                "O",
+                "O",
+                "O",
+                "B-PER",
+                "I-PER",
+                "I-PER",
+                "I-PER",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+            ],
+            [
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "B-ORG",
+                "I-ORG",
+                "O",
+            ],
+            [
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "B-ORG",
+                "O",
+                "O",
+                "B-PER",
+                "I-PER",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+                "O",
+            ],
+        ],
+        "tokens": [
+            [
+                "Germany",
+                "'s",
+                "representative",
+                "to",
+                "the",
+                "European",
+                "Union",
+                "'s",
+                "veterinary",
+                "committee",
+                "Werner",
+                "Zwingmann",
+                "said",
+                "on",
+                "Wednesday",
+                "consumers",
+                "should",
+                "buy",
+                "sheepmeat",
+                "from",
+                "countries",
+                "other",
+                "than",
+                "Britain",
+                "until",
+                "the",
+                "scientific",
+                "advice",
+                "was",
+                "clearer",
+                ".",
+            ],
+            [
+                '"',
+                "We",
+                "do",
+                "n't",
+                "support",
+                "any",
+                "such",
+                "recommendation",
+                "because",
+                "we",
+                "do",
+                "n't",
+                "see",
+                "any",
+                "grounds",
+                "for",
+                "it",
+                ",",
+                '"',
+                "the",
+                "Commission",
+                "'s",
+                "chief",
+                "spokesman",
+                "Nikolaus",
+                "van",
+                "der",
+                "Pas",
+                "told",
+                "a",
+                "news",
+                "briefing",
+                ".",
+            ],
+            [
+                "He",
+                "said",
+                "further",
+                "scientific",
+                "study",
+                "was",
+                "required",
+                "and",
+                "if",
+                "it",
+                "was",
+                "found",
+                "that",
+                "action",
+                "was",
+                "needed",
+                "it",
+                "should",
+                "be",
+                "taken",
+                "by",
+                "the",
+                "European",
+                "Union",
+                ".",
+            ],
+            [
+                "He",
+                "said",
+                "a",
+                "proposal",
+                "last",
+                "month",
+                "by",
+                "EU",
+                "Farm",
+                "Commissioner",
+                "Franz",
+                "Fischler",
+                "to",
+                "ban",
+                "sheep",
+                "brains",
+                ",",
+                "spleens",
+                "and",
+                "spinal",
+                "cords",
+                "from",
+                "the",
+                "human",
+                "and",
+                "animal",
+                "food",
+                "chains",
+                "was",
+                "a",
+                "highly",
+                "specific",
+                "and",
+                "precautionary",
+                "move",
+                "to",
+                "protect",
+                "human",
+                "health",
+                ".",
+            ],
+        ],
+    }
+    train_dataset = pd.DataFrame(train_data)
+    dev_dataset = pd.DataFrame(dev_data)
+
+    custom_sent_keys = ["tokens"]
+    label_key = "ner_tags"
+
+    X_train = train_dataset[custom_sent_keys]
+    y_train = train_dataset[label_key]
+
+    X_val = dev_dataset[custom_sent_keys]
+    y_val = dev_dataset[label_key]
+    return X_train, y_train, X_val, y_val
+
+
+def get_automl_settings(estimator_name="transformer"):
     automl_settings = {
         "gpu_per_trial": 0,
         "max_iter": 3,
@@ -1128,14 +1584,21 @@ def get_automl_settings(estimator_name="transformer"):
         "use_ray": False,
     }
 
-    automl_settings["fit_kwargs_by_estimator"] = {
-        estimator_name: {
-            "model_path": "google/electra-small-discriminator",
-            "output_dir": "test/data/output/",
-            "ckpt_per_epoch": 1,
-            "fp16": False,
+    if estimator_name.endswith("ms"):
+        automl_settings["fit_kwargs_by_estimator"] = {
+            estimator_name: {
+                "output_dir": "test/data/output/",
+                "fp16": False,
+            }
         }
-    }
+    else:
+        automl_settings["fit_kwargs_by_estimator"] = {
+            estimator_name: {
+                "model_path": "google/electra-small-discriminator",
+                "output_dir": "test/data/output/",
+                "fp16": False,
+            }
+        }
 
     automl_settings["estimator_list"] = [estimator_name]
     return automl_settings

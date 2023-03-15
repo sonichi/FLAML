@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split
 import pandas as pd
 from datetime import datetime
 from flaml import AutoML
-from flaml.model import LGBMEstimator
+from flaml.automl.model import LGBMEstimator
 from flaml import tune
 
 
@@ -87,6 +87,22 @@ class TestClassification(unittest.TestCase):
 
         automl = AutoML()
         automl_settings = {
+            "time_budget": 3,
+            "task": "classification",
+            "n_jobs": 1,
+            "estimator_list": ["xgboost", "catboost", "kneighbor"],
+            "eval_method": "cv",
+            "n_splits": 3,
+            "metric": "accuracy",
+            "log_training_metric": True,
+            # "verbose": 4,
+            "ensemble": True,
+        }
+        automl.fit(X, y, **automl_settings)
+        del automl
+
+        automl = AutoML()
+        automl_settings = {
             "time_budget": 6,
             "task": "classification",
             "n_jobs": 1,
@@ -99,7 +115,9 @@ class TestClassification(unittest.TestCase):
             "ensemble": True,
         }
         automl.fit(X, y, **automl_settings)
-        assert automl.model is not None
+        print(automl.feature_names_in_)
+        print(automl.feature_importances_)
+        del automl
 
         automl = AutoML()
         try:
@@ -122,21 +140,7 @@ class TestClassification(unittest.TestCase):
             "n_concurrent_trials": n_concurrent_trials,
         }
         automl.fit(X, y, **automl_settings)
-
-        automl = AutoML()
-        automl_settings = {
-            "time_budget": 3,
-            "task": "classification",
-            "n_jobs": 1,
-            "estimator_list": ["xgboost", "catboost", "kneighbor"],
-            "eval_method": "cv",
-            "n_splits": 3,
-            "metric": "accuracy",
-            "log_training_metric": True,
-            # "verbose": 4,
-            "ensemble": True,
-        }
-        automl.fit(X, y, **automl_settings)
+        del automl
 
         automl = AutoML()
         automl_settings = {
@@ -151,7 +155,44 @@ class TestClassification(unittest.TestCase):
             # "verbose": 4,
             "ensemble": True,
         }
+        automl_settings["keep_search_state"] = True
         automl.fit(X, y, **automl_settings)
+        X, y = automl._X_train_all, automl._y_train_all
+        del automl
+
+        automl = AutoML()
+        automl_settings = {
+            "time_budget": 3,
+            "task": "classification",
+            "n_jobs": 1,
+            "estimator_list": ["kneighbor"],
+            "eval_method": "cv",
+            "n_splits": 3,
+            "metric": "accuracy",
+            "log_training_metric": True,
+            # "verbose": 4,
+            "ensemble": True,
+            "skip_transform": True,
+        }
+        automl.fit(X, y, **automl_settings)
+        del automl
+
+        automl = AutoML()
+        automl_settings = {
+            "time_budget": 3,
+            "task": "classification",
+            "n_jobs": 1,
+            "estimator_list": ["kneighbor"],
+            "eval_method": "cv",
+            "n_splits": 3,
+            "metric": "roc_auc_weighted",
+            "log_training_metric": True,
+            # "verbose": 4,
+            "ensemble": True,
+            "skip_transform": True,
+        }
+        automl.fit(X, y, **automl_settings)
+        del automl
 
     def test_binary(self):
         automl_experiment = AutoML()
@@ -209,7 +250,7 @@ class TestClassification(unittest.TestCase):
         _ = automl_experiment.predict(fake_df)
 
     def test_sparse_matrix_xgboost(self):
-        automl_experiment = AutoML()
+        automl = AutoML()
         automl_settings = {
             "time_budget": 3,
             "metric": "ap",
@@ -224,15 +265,30 @@ class TestClassification(unittest.TestCase):
         import xgboost as xgb
 
         callback = xgb.callback.TrainingCallback()
-        automl_experiment.fit(
+        automl.fit(
             X_train=X_train, y_train=y_train, callbacks=[callback], **automl_settings
         )
-        print(automl_experiment.predict(X_train))
-        print(automl_experiment.model)
-        print(automl_experiment.config_history)
-        print(automl_experiment.best_model_for_estimator("xgboost"))
-        print(automl_experiment.best_iteration)
-        print(automl_experiment.best_estimator)
+        print(automl.predict(X_train))
+        print(automl.model)
+        print(automl.config_history)
+        print(automl.best_model_for_estimator("xgboost"))
+        print(automl.best_iteration)
+        print(automl.best_estimator)
+
+        # test an old version of xgboost
+        import subprocess
+        import sys
+
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "xgboost==1.3.3", "--user"]
+        )
+        automl = AutoML()
+        automl.fit(X_train=X_train, y_train=y_train, **automl_settings)
+        print(automl.feature_names_in_)
+        print(automl.feature_importances_)
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "-U", "xgboost", "--user"]
+        )
 
     def test_ray_classification(self):
         X, y = load_breast_cancer(return_X_y=True)
@@ -257,6 +313,7 @@ class TestClassification(unittest.TestCase):
                 time_budget=10,
                 task="classification",
                 n_concurrent_trials=2,
+                ensemble=True,
             )
         except ImportError:
             return
@@ -353,5 +410,5 @@ class TestClassification(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
     test = TestClassification()
+    test.test_preprocess()

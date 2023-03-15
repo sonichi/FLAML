@@ -1,17 +1,17 @@
 import unittest
-
 import numpy as np
 import scipy.sparse
-
 import pandas as pd
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import logging
 from flaml.tune import loguniform, polynomial_expansion_set
-from vowpalwabbit import pyvw
 from flaml import AutoVW
 import string
 import os
 import openml
+from requests.exceptions import SSLError
+import sys
+import pytest
 
 VW_DS_DIR = "test/data/"
 NS_LIST = list(string.ascii_lowercase) + list(string.ascii_uppercase)
@@ -96,10 +96,14 @@ def shuffle_data(X, y, seed):
 def get_oml_to_vw(did, max_ns_num, ds_dir=VW_DS_DIR):
     success = False
     print("-----getting oml dataset-------", did)
-    ds = openml.datasets.get_dataset(did)
-    target_attribute = ds.default_target_attribute
-    # if target_attribute is None and did in OML_target_attribute_dict:
-    #     target_attribute = OML_target_attribute_dict[did]
+    try:
+        ds = openml.datasets.get_dataset(did)
+        target_attribute = ds.default_target_attribute
+        # if target_attribute is None and did in OML_target_attribute_dict:
+        #     target_attribute = OML_target_attribute_dict[did]
+    except SSLError as e:
+        print(e)
+        return
 
     print("target=ds.default_target_attribute", target_attribute)
     data = ds.get_data(target=target_attribute, dataset_format="array")
@@ -364,8 +368,14 @@ def get_vw_tuning_problem(tuning_hp="NamesapceInteraction"):
     return vw_oml_problem_args, vw_online_aml_problem
 
 
+@pytest.mark.skipif(
+    "3.10" in sys.version,
+    reason="do not run on py 3.10",
+)
 class TestAutoVW(unittest.TestCase):
     def test_vw_oml_problem_and_vanilla_vw(self):
+        from vowpalwabbit import pyvw
+
         vw_oml_problem_args, vw_online_aml_problem = get_vw_tuning_problem()
         vanilla_vw = pyvw.vw(**vw_oml_problem_args["fixed_hp_config"])
         cumulative_loss_list = online_learning_loop(

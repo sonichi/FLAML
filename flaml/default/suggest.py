@@ -3,12 +3,18 @@ from sklearn.neighbors import NearestNeighbors
 import logging
 import pathlib
 import json
-from flaml.data import CLASSIFICATION, DataTransformer
-from flaml.ml import get_estimator_class, get_classification_objective
+from flaml.automl.data import DataTransformer
+from flaml.automl.task.task import CLASSIFICATION, get_classification_objective
+from flaml.automl.ml import get_estimator_class
+from flaml.version import __version__
 
 LOCATION = pathlib.Path(__file__).parent.resolve()
 logger = logging.getLogger(__name__)
 CONFIG_PREDICTORS = {}
+
+
+def version_parse(version):
+    return tuple(map(int, (version.split("."))))
 
 
 def meta_feature(task, X_train, y_train, meta_feature_names):
@@ -25,9 +31,14 @@ def meta_feature(task, X_train, y_train, meta_feature_names):
         elif each_feature_name == "NumberOfClasses":
             this_feature.append(len(np.unique(y_train)) if is_classification else 0)
         elif each_feature_name == "PercentageOfNumericFeatures":
-            this_feature.append(
-                X_train.select_dtypes(include=np.number).shape[1] / n_feat
-            )
+            try:
+                # this is feature is only supported for dataframe
+                this_feature.append(
+                    X_train.select_dtypes(include=np.number).shape[1] / n_feat
+                )
+            except AttributeError:
+                # 'numpy.ndarray' object has no attribute 'select_dtypes'
+                this_feature.append(1)  # all features are numeric
         else:
             raise ValueError("Feature {} not implemented. ".format(each_feature_name))
 
@@ -35,7 +46,8 @@ def meta_feature(task, X_train, y_train, meta_feature_names):
 
 
 def load_config_predictor(estimator_name, task, location=None):
-    key = f"{estimator_name}_{task}"
+    task = str(task)
+    key = f"{location}/{estimator_name}/{task}"
     predictor = CONFIG_PREDICTORS.get(key)
     if predictor:
         return predictor
@@ -51,7 +63,15 @@ def load_config_predictor(estimator_name, task, location=None):
     return predictor
 
 
-def suggest_config(task, X, y, estimator_or_predictor, location=None, k=None):
+def suggest_config(
+    task,
+    X,
+    y,
+    estimator_or_predictor,
+    location=None,
+    k=None,
+    meta_feature_fn=meta_feature,
+):
     """Suggest a list of configs for the given task and training data.
 
     The returned configs can be used as starting points for AutoML.fit().
@@ -59,7 +79,7 @@ def suggest_config(task, X, y, estimator_or_predictor, location=None, k=None):
     """
     task = (
         get_classification_objective(len(np.unique(y)))
-        if task == "classification"
+        if task == "classification" and y is not None
         else task
     )
     predictor = (
@@ -67,13 +87,16 @@ def suggest_config(task, X, y, estimator_or_predictor, location=None, k=None):
         if isinstance(estimator_or_predictor, str)
         else estimator_or_predictor
     )
-    from flaml import __version__
 
     older_version = "1.0.2"
     # TODO: update older_version when the newer code can no longer handle the older version json file
-    assert __version__ >= predictor["version"] >= older_version
+    assert (
+        version_parse(__version__)
+        >= version_parse(predictor["version"])
+        >= version_parse(older_version)
+    )
     prep = predictor["preprocessing"]
-    feature = meta_feature(
+    feature = meta_feature_fn(
         task, X_train=X, y_train=y, meta_feature_names=predictor["meta_feature_names"]
     )
     feature = (np.array(feature) - np.array(prep["center"])) / np.array(prep["scale"])
@@ -86,9 +109,10 @@ def suggest_config(task, X, y, estimator_or_predictor, location=None, k=None):
     choice = neighbors[ind]["choice"] if k is None else neighbors[ind]["choice"][:k]
     configs = [predictor["portfolio"][x] for x in choice]
     for config in configs:
-        hyperparams = config["hyperparameters"]
-        if hyperparams and "FLAML_sample_size" in hyperparams:
-            hyperparams.pop("FLAML_sample_size")
+        if "hyperparameters" in config:
+            hyperparams = config["hyperparameters"]
+            if hyperparams and "FLAML_sample_size" in hyperparams:
+                hyperparams.pop("FLAML_sample_size")
     return configs
 
 
@@ -157,6 +181,15 @@ def suggest_hyperparams(task, X, y, estimator_or_predictor, location=None):
     estimator_class = model.estimator_class
     hyperparams = hyperparams and model.params
     return hyperparams, estimator_class
+
+
+class AutoMLTransformer:
+    def __init__(self, model, data_transformer):
+        self._model = model
+        self._dt = data_transformer
+
+    def transform(self, X):
+        return self._model._preprocess(self._dt.transform(X))
 
 
 def preprocess_and_suggest_hyperparams(
@@ -238,9 +271,5 @@ def preprocess_and_suggest_hyperparams(
         X = model._preprocess(X)
         hyperparams = hyperparams and model.params
 
-        class AutoMLTransformer:
-            def transform(self, X):
-                return model._preprocess(dt.transform(X))
-
-        transformer = AutoMLTransformer()
+        transformer = AutoMLTransformer(model, dt)
         return hyperparams, estimator_class, X, y, transformer, dt.label_transformer

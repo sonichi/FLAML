@@ -2,16 +2,17 @@
 
 ## Overview
 
-[`flaml.AutoML`](../reference/automl#automl-objects) is a class for task-oriented AutoML. It can be used as a scikit-learn style estimator with the standard `fit` and `predict` functions. The minimal inputs from users are the training data and the task type.
+[`flaml.AutoML`](../reference/automl/automl#automl-objects) is a class for task-oriented AutoML. It can be used as a scikit-learn style estimator with the standard `fit` and `predict` functions. The minimal inputs from users are the training data and the task type.
 
 * Training data:
     - numpy array. When the input data are stored in numpy array, they are passed to `fit()` as `X_train` and `y_train`.
     - pandas dataframe. When the input data are stored in pandas dataframe, they are passed to `fit()` either as `X_train` and `y_train`, or as `dataframe` and `label`.
 * Tasks (specified via `task`):
-    - 'classification': classification.
-    - 'regression': regression.
+    - 'classification': classification with tabular data.
+    - 'regression': regression with tabular data.
     - 'ts_forecast': time series forecasting.
     - 'ts_forecast_classification': time series forecasting for classification.
+    - 'ts_forecast_panel': time series forecasting for panel datasets (multiple time series).
     - 'rank': learning to rank.
     - 'seq-classification': sequence classification.
     - 'seq-regression': sequence regression.
@@ -19,7 +20,7 @@
     - 'token-classification': token classification.
     - 'multichoice-classification': multichoice classification.
 
-An optional input is `time_budget` for searching models and hyperparameters. When not specified, a default budget of 60 seconds will be used.
+Two optional inputs are `time_budget` and `max_iter` for searching models and hyperparameters. When both are unspecified, only one model per estimator will be trained (using our [zero-shot](Zero-Shot-AutoML) technique). When `time_budget` is provided, there can be randomness in the result due to runtime variance.
 
 A typical way to use `flaml.AutoML`:
 
@@ -39,7 +40,7 @@ with open("automl.pkl", "rb") as f:
 pred = automl.predict(X_test)
 ```
 
-If users provide the minimal inputs only, `AutoML` uses the default settings for time budget, optimization metric, estimator list etc.
+If users provide the minimal inputs only, `AutoML` uses the default settings for optimization metric, estimator list etc.
 
 ## Customize AutoML.fit()
 
@@ -58,6 +59,9 @@ The optimization metric is specified via the `metric` argument. It can be either
     - 'roc_auc': minimize 1 - roc_auc_score. Default metric for binary classification.
     - 'roc_auc_ovr': minimize 1 - roc_auc_score with `multi_class="ovr"`.
     - 'roc_auc_ovo': minimize 1 - roc_auc_score with `multi_class="ovo"`.
+    - 'roc_auc_weighted': minimize 1 - roc_auc_score with `average="weighted"`.
+    - 'roc_auc_ovr_weighted': minimize 1 - roc_auc_score with `multi_class="ovr"` and `average="weighted"`.
+    - 'roc_auc_ovo_weighted': minimize 1 - roc_auc_score with `multi_class="ovo"` and `average="weighted"`.
     - 'f1': minimize 1 - f1_score.
     - 'micro_f1': minimize 1 - f1_score with `average="micro"`.
     - 'macro_f1': minimize 1 - f1_score with `average="macro"`.
@@ -81,7 +85,7 @@ For example,
 def custom_metric(
     X_val, y_val, estimator, labels,
     X_train, y_train, weight_val=None, weight_train=None,
-    **args,
+    *args,
 ):
     from sklearn.metrics import log_loss
     import time
@@ -108,9 +112,12 @@ The estimator list can contain one or more estimator names, each corresponding t
 #### Estimator
 * Built-in estimator.
     - 'lgbm': LGBMEstimator for task "classification", "regression", "rank", "ts_forecast" and "ts_forecast_classification". Hyperparameters: n_estimators, num_leaves, min_child_samples, learning_rate, log_max_bin (logarithm of (max_bin + 1) with base 2), colsample_bytree, reg_alpha, reg_lambda.
-    - 'xgboost': XGBoostSkLearnEstimator for task "classification", "regression", "rank", "ts_forecast" and "ts_forecast_classification". Hyperparameters: n_estimators, max_leaves, max_depth, min_child_weight, learning_rate, subsample, colsample_bylevel, colsample_bytree, reg_alpha, reg_lambda.
-    - 'rf': RandomForestEstimator for task "classification", "regression", "ts_forecast" and "ts_forecast_classification". Hyperparameters: n_estimators, max_features, max_leaves, criterion (for classification only).
-    - 'extra_tree': ExtraTreesEstimator for task "classification", "regression", "ts_forecast" and "ts_forecast_classification". Hyperparameters: n_estimators, max_features, max_leaves, criterion (for classification only).
+    - 'xgboost': XGBoostSkLearnEstimator for task "classification", "regression", "rank", "ts_forecast" and "ts_forecast_classification". Hyperparameters: n_estimators, max_leaves, min_child_weight, learning_rate, subsample, colsample_bylevel, colsample_bytree, reg_alpha, reg_lambda.
+    - 'xgb_limitdepth': XGBoostLimitDepthEstimator for task "classification", "regression", "rank", "ts_forecast" and "ts_forecast_classification". Hyperparameters: n_estimators,  max_depth, min_child_weight, learning_rate, subsample, colsample_bylevel, colsample_bytree, reg_alpha, reg_lambda.
+    - 'rf': RandomForestEstimator for task "classification", "regression", "ts_forecast" and "ts_forecast_classification". Hyperparameters: n_estimators, max_features, max_leaves, criterion (for classification only). Starting from v1.1.0,
+    it uses a fixed ranndom_state by default.
+    - 'extra_tree': ExtraTreesEstimator for task "classification", "regression", "ts_forecast" and "ts_forecast_classification". Hyperparameters: n_estimators, max_features, max_leaves, criterion (for classification only). Starting from v1.1.0,
+    it uses a fixed ranndom_state by default.
     - 'lrl1': LRL1Classifier (sklearn.LogisticRegression with L1 regularization) for task "classification". Hyperparameters: C.
     - 'lrl2': LRL2Classifier (sklearn.LogisticRegression with L2 regularization) for task "classification". Hyperparameters: C.
     - 'catboost': CatBoostEstimator for task "classification" and "regression". Hyperparameters: early_stopping_rounds, learning_rate, n_estimators.
@@ -119,54 +126,57 @@ The estimator list can contain one or more estimator names, each corresponding t
     - 'arima': ARIMA for task "ts_forecast". Hyperparameters: p, d, q.
     - 'sarimax': SARIMAX for task "ts_forecast". Hyperparameters: p, d, q, P, D, Q, s.
     - 'transformer': Huggingface transformer models for task "seq-classification", "seq-regression", "multichoice-classification", "token-classification" and "summarization". Hyperparameters: learning_rate, num_train_epochs, per_device_train_batch_size, warmup_ratio, weight_decay, adam_epsilon, seed.
+    - 'temporal_fusion_transformer': TemporalFusionTransformerEstimator for task "ts_forecast_panel". Hyperparameters: gradient_clip_val, hidden_size, hidden_continuous_size, attention_head_size, dropout, learning_rate. There is a [known issue](https://github.com/jdb78/pytorch-forecasting/issues/1145) with pytorch-forecast logging.
 * Custom estimator. Use custom estimator for:
     - tuning an estimator that is not built-in;
     - customizing search space for a built-in estimator.
 
-To tune a custom estimator that is not built-in, you need to:
+#### Guidelines on tuning a custom estimator
 
-1. Build a custom estimator by inheritting [`flaml.model.BaseEstimator`](../reference/model#baseestimator-objects) or a derived class.
+To tune a custom estimator that is not built-in, you need to:
+1. Build a custom estimator by inheritting [`flaml.model.BaseEstimator`](../reference/automl/model#baseestimator-objects) or a derived class.
 For example, if you have a estimator class with scikit-learn style `fit()` and `predict()` functions, you only need to set `self.estimator_class` to be that class in your constructor.
 
 ```python
-from flaml.model import SKLearnEstimator
+from flaml.automl.model import SKLearnEstimator
 # SKLearnEstimator is derived from BaseEstimator
 import rgf
 
+
 class MyRegularizedGreedyForest(SKLearnEstimator):
-    def __init__(self, task="binary", **config):
-        super().__init__(task, **config)
+  def __init__(self, task="binary", **config):
+    super().__init__(task, **config)
 
-        if task in CLASSIFICATION:
-            from rgf.sklearn import RGFClassifier
+    if task in CLASSIFICATION:
+      from rgf.sklearn import RGFClassifier
 
-            self.estimator_class = RGFClassifier
-        else:
-            from rgf.sklearn import RGFRegressor
+      self.estimator_class = RGFClassifier
+    else:
+      from rgf.sklearn import RGFRegressor
 
-            self.estimator_class = RGFRegressor
+      self.estimator_class = RGFRegressor
 
-    @classmethod
-    def search_space(cls, data_size, task):
-        space = {
-            "max_leaf": {
-                "domain": tune.lograndint(lower=4, upper=data_size),
-                "low_cost_init_value": 4,
-            },
-            "n_iter": {
-                "domain": tune.lograndint(lower=1, upper=data_size),
-                "low_cost_init_value": 1,
-            },
-            "learning_rate": {"domain": tune.loguniform(lower=0.01, upper=20.0)},
-            "min_samples_leaf": {
-                "domain": tune.lograndint(lower=1, upper=20),
-                "init_value": 20,
-            },
-        }
-        return space
+  @classmethod
+  def search_space(cls, data_size, task):
+    space = {
+      "max_leaf": {
+        "domain": tune.lograndint(lower=4, upper=data_size),
+        "low_cost_init_value": 4,
+      },
+      "n_iter": {
+        "domain": tune.lograndint(lower=1, upper=data_size),
+        "low_cost_init_value": 1,
+      },
+      "learning_rate": {"domain": tune.loguniform(lower=0.01, upper=20.0)},
+      "min_samples_leaf": {
+        "domain": tune.lograndint(lower=1, upper=20),
+        "init_value": 20,
+      },
+    }
+    return space
 ```
 
-In the constructor, we set `self.estimator_class` as `RGFClassifier` or `RGFRegressor` according to the task type. If the estimator you want to tune does not have a scikit-learn style `fit()` and `predict()` API, you can override the `fit()` and `predict()` function of `flaml.model.BaseEstimator`, like [XGBoostEstimator](../reference/model#xgboostestimator-objects).
+In the constructor, we set `self.estimator_class` as `RGFClassifier` or `RGFRegressor` according to the task type. If the estimator you want to tune does not have a scikit-learn style `fit()` and `predict()` API, you can override the `fit()` and `predict()` function of `flaml.model.BaseEstimator`, like [XGBoostEstimator](../reference/automl/model#xgboostestimator-objects). Importantly, we also add the `task="binary"` parameter in the signature of `__init__` so that it doesn't get grouped together with the `**config` kwargs that determines the parameters with which the underlying estimator (`self.estimator_class`) is constructed. If your estimator doesn't use one of the parameters that it is passed, for example some regressors in `scikit-learn` don't use the `n_jobs` parameter, it is enough to add `n_jobs=None` to the signature so that it is ignored by the `**config` dict.
 
 2. Give the custom estimator a name and add it in AutoML. E.g.,
 
@@ -191,26 +201,25 @@ Each estimator class, built-in or not, must have a `search_space` function. In t
 
 In the example above, we tune four hyperparameters, three integers and one float. They all follow a log-uniform distribution. "max_leaf" and "n_iter" have "low_cost_init_value" specified as their values heavily influence the training cost.
 
-
-
-
 To customize the search space for a built-in estimator, use a similar approach to define a class that inherits the existing estimator. For example,
 
 ```python
-from flaml.model import XGBoostEstimator
+from flaml.automl.model import XGBoostEstimator
+
 
 def logregobj(preds, dtrain):
-    labels = dtrain.get_label()
-    preds = 1.0 / (1.0 + np.exp(-preds))  # transform raw leaf weight
-    grad = preds - labels
-    hess = preds * (1.0 - preds)
-    return grad, hess
+  labels = dtrain.get_label()
+  preds = 1.0 / (1.0 + np.exp(-preds))  # transform raw leaf weight
+  grad = preds - labels
+  hess = preds * (1.0 - preds)
+  return grad, hess
+
 
 class MyXGB1(XGBoostEstimator):
-    """XGBoostEstimator with logregobj as the objective function"""
+  """XGBoostEstimator with logregobj as the objective function"""
 
-    def __init__(self, **config):
-        super().__init__(objective=logregobj, **config)
+  def __init__(self, **config):
+    super().__init__(objective=logregobj, **config)
 ```
 
 We override the constructor and set the training objective as a custom function `logregobj`. The hyperparameters and their search range do not change. For another example,
@@ -234,17 +243,46 @@ class XGBoost2D(XGBoostSklearnEstimator):
 
 We override the `search_space` function to tune two hyperparameters only, "n_estimators" and "max_leaves". They are both random integers in the log space, ranging from 4 to data-dependent upper bound. The lower bound for each corresponds to low training cost, hence the "low_cost_init_value" for each is set to 4.
 
+##### A shortcut to override the search space
+
+One can use the `custom_hp` argument in [`AutoML.fit()`](../reference/automl/automl#fit) to override the search space for an existing estimator quickly. For example, if you would like to temporarily change the search range of "n_estimators" of xgboost, disable searching "max_leaves" in random forest, and add "subsample" in the search space of lightgbm, you can set:
+
+```python
+custom_hp = {
+    "xgboost": {
+        "n_estimators": {
+            "domain": tune.lograndint(lower=new_lower, upper=new_upper),
+            "low_cost_init_value": new_lower,
+        },
+    },
+    "rf": {
+        "max_leaves": {
+            "domain": None,  # disable search
+        },
+    },
+    "lgbm": {
+        "subsample": {
+            "domain": tune.uniform(lower=0.1, upper=1.0),
+            "init_value": 1.0,
+        },
+        "subsample_freq": {
+            "domain": 1,  # subsample_freq must > 0 to enable subsample
+        },
+    },
+}
+```
+
 ### Constraint
 
 There are several types of constraints you can impose.
 
-1. End-to-end constraints on the AutoML process.
+1. Constraints on the AutoML process.
 
 - `time_budget`: constrains the wall-clock time (seconds) used by the AutoML process. We provide some tips on [how to set time budget](#how-to-set-time-budget).
 
 - `max_iter`: constrains the maximal number of models to try in the AutoML process.
 
-2. Constraints on the (hyperparameters of) the estimators.
+2. Constraints on the constructor arguments of the estimators.
 
 Some constraints on the estimator can be implemented via the custom learner. For example,
 
@@ -252,10 +290,23 @@ Some constraints on the estimator can be implemented via the custom learner. For
 class MonotonicXGBoostEstimator(XGBoostSklearnEstimator):
     @classmethod
     def search_space(**args):
-        return super().search_space(**args).update({"monotone_constraints": "(1, -1)"})
+        space = super().search_space(**args)
+        space.update({"monotone_constraints": {"domain": "(1, -1)"}})
+        return space
 ```
 
-It adds a monotonicity constraint to XGBoost. This approach can be used to set any constraint that is a parameter in the underlying estimator's constructor.
+It adds a monotonicity constraint to XGBoost. This approach can be used to set any constraint that is an argument in the underlying estimator's constructor.
+A shortcut to do this is to use the [`custom_hp`](#a-shortcut-to-override-the-search-space) argument:
+
+```python
+custom_hp = {
+    "xgboost": {
+        "monotone_constraints": {
+            "domain": "(1, -1)"  # fix the domain as a constant
+        }
+    }
+}
+```
 
 3. Constraints on the models tried in AutoML.
 
@@ -267,9 +318,10 @@ For example,
 ```python
 automl.fit(X_train, y_train, max_iter=100, train_time_limit=1, pred_time_limit=1e-3)
 ```
+
 4. Constraints on the metrics of the ML model tried in AutoML.
 
-When users provide a [custom metric function](https://microsoft.github.io/FLAML/docs/Use-Cases/Task-Oriented-AutoML#optimization-metric), which returns a primary optimization metric and a dictionary of additional metrics (typically also about the model) to log, users can also specify constraints on one or more of the metrics in the dictionary of additional metrics.
+When users provide a [custom metric function](#optimization-metric), which returns a primary optimization metric and a dictionary of additional metrics (typically also about the model) to log, users can also specify constraints on one or more of the metrics in the dictionary of additional metrics.
 
 Users need to provide a list of such constraints in the following format:
 Each element in this list is a 3-tuple, which shall be expressed
@@ -313,31 +365,38 @@ For cross validation, you can also set `n_splits` of the number of folds. By def
 
 #### Data split method
 
-By default, flaml uses the following method to split the data:
+flaml relies on the provided task type to infer the default splitting strategy:
 * stratified split for classification;
 * uniform split for regression;
 * time-based split for time series forecasting;
 * group-based split for learning to rank.
 
 The data split method for classification can be changed into uniform split by setting `split_type="uniform"`. The data are shuffled when `split_type in ("uniform", "stratified")`.
-For both classification and regression, time-based split can be enforced if the data are sorted by timestamps, by setting `split_type="time"`.
 
-When `eval_method="cv"`, `split_type` can also be set as a custom splitter. It needs to be an instance of a derived class of scikit-learn
+For both classification and regression tasks more advanced split configurations are possible:
+- time-based split can be enforced if the data are sorted by timestamps, by setting `split_type="time"`,
+- group-based splits can be set by using `split_type="group"` while providing the group identifier for each sample through the `groups` argument. This is also shown in an [example notebook](https://github.com/microsoft/FLAML/blob/main/notebook/basics/understanding_cross_validation.ipynb).
+
+More in general, `split_type` can also be set as a custom splitter object, when `eval_method="cv"`. It needs to be an instance of a derived class of scikit-learn
 [KFold](https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.KFold.html#sklearn.model_selection.KFold)
-and have ``split`` and ``get_n_splits`` methods with the same signatures.
+and have ``split`` and ``get_n_splits`` methods with the same signatures.  To disable shuffling, the splitter instance must contain the attribute `shuffle=False`.
 
 ### Parallel tuning
 
 When you have parallel resources, you can either spend them in training and keep the model search sequential, or perform parallel search. Following scikit-learn, the parameter `n_jobs` specifies how many CPU cores to use for each training job. The number of parallel trials is specified via the parameter `n_concurrent_trials`. By default, `n_jobs=-1, n_concurrent_trials=1`. That is, all the CPU cores (in a single compute node) are used for training a single model and the search is sequential. When you have more resources than what each single training job needs, you can consider increasing `n_concurrent_trials`.
 
-To do parallel tuning, install the `ray` and `blendsearch` options:
+FLAML now support two backends for parallel tuning, i.e., `Ray` and `Spark`. You can use either of them, but not both for one tuning job.
+
+#### Parallel tuning with Ray
+
+To do parallel tuning with Ray, install the `ray` and `blendsearch` options:
 ```bash
 pip install flaml[ray,blendsearch]
 ```
 
 `ray` is used to manage the resources. For example,
 ```python
-ray.init(n_cpus=16)
+ray.init(num_cpus=16)
 ```
 allocates 16 CPU cores. Then, when you run:
 ```python
@@ -345,6 +404,43 @@ automl.fit(X_train, y_train, n_jobs=4, n_concurrent_trials=4)
 ```
 flaml will perform 4 trials in parallel, each consuming 4 CPU cores. The parallel tuning uses the [BlendSearch](Tune-User-Defined-Function##blendsearch-economical-hyperparameter-optimization-with-blended-search-strategy) algorithm.
 
+#### Parallel tuning with Spark
+
+To do parallel tuning with Spark, install the `spark` and `blendsearch` options:
+
+> *Spark support is added in v1.1.0*
+```bash
+pip install flaml[spark,blendsearch]>=1.1.0
+```
+
+For more details about installing Spark, please refer to [Installation](../Installation#Distributed-tuning).
+
+An example of using Spark for parallel tuning is:
+```python
+automl.fit(X_train, y_train, n_concurrent_trials=4, use_spark=True)
+```
+For Spark clusters, by default, we will launch one trial per executor. However, sometimes we want to launch more trials than the number of executors (e.g., local mode). In this case, we can set the environment variable `FLAML_MAX_CONCURRENT` to override the detected `num_executors`. The final number of concurrent trials will be the minimum of `n_concurrent_trials` and `num_executors`. Also, GPU training is not supported yet when use_spark is True.
+
+#### **Guidelines on parallel vs sequential tuning**
+
+**(1) Considerations on wall-clock time.**
+
+One common motivation for parallel tuning is to save wall-clock time. When sequential tuning and parallel tuning achieve a similar wall-clock time, sequential tuning should be preferred. This is a rule of thumb when the HPO algorithm is sequential by nature (e.g., Bayesian Optimization and FLAML's HPO algorithms CFO and BS). Sequential tuning allows the HPO algorithms to take advantage of the historical trial results. Then the question is **How to estimate the wall-clock-time needed by parallel tuning and sequential tuning**?
+
+You can use the following way to roughly estimate the wall-clock time in parallel tuning and sequential tuning: To finish $N$ trials of hyperparameter tuning, i.e., run $N$ hyperparameter configurations, the total wall-clock time needed is $N/k*(SingleTrialTime + Overhead)$, in which $SingleTrialTime$ is the trial time to evaluate a particular hyperparameter configuration, $k$ is the scale of parallelism, e.g., the number of parallel CPU/GPU cores, and $Overhead$ is the computation overhead.
+
+In sequential tuning, $k=1$, and in parallel tuning $k>1$. This may suggest that parallel tuning has a shorter wall-clock time. But it is not always the case considering the other two factors $SingleTrialTime$, and $Overhead$:
+
+- The $Overhead$ in sequential tuning is typically negligible; while in parallel tuning, it is relatively large.
+
+- You can also try to reduce the $SingleTrialTime$ to reduce the wall-clock time in sequential tuning: For example, by increasing the resource consumed by a single trial (distributed or multi-thread training), you can reduce $SingleTrialTime$. One concrete example is to use the `n_jobs` parameter that sets the number of threads the fitting process can use in many scikit-learn style algorithms.
+
+**(2) Considerations on randomness.**
+
+Potential reasons that cause randomness:
+1. Parallel tuning: In the case of parallel tuning, the order of trials' finishing time is no longer deterministic. This non-deterministic order, combined with sequential HPO algorithms, leads to a non-deterministic hyperparameter tuning trajectory.
+
+2. Distributed or multi-thread training: Distributed/multi-thread training may introduce randomness in model training, i.e., the trained model with the same hyperparameter may be different because of such randomness. This model-level randomness may be undesirable in some cases.
 
 ### Warm start
 
@@ -357,7 +453,7 @@ automl2 = AutoML()
 automl2.fit(X_train, y_train, time_budget=7200, starting_points=automl1.best_config_per_estimator)
 ```
 
-`starting_points` is a dictionary. The keys are the estimator names. If you do not need to specify starting points for an estimator, exclude its name from the dictionary. The value for each key can be either a dictionary of a list of dictionaries, corresponding to one hyperparameter configuration, or multiple hyperparameter configurations, respectively.
+`starting_points` is a dictionary or a str to specify the starting hyperparameter config. (1) When it is a dictionary, the keys are the estimator names. If you do not need to specify starting points for an estimator, exclude its name from the dictionary. The value for each key can be either a dictionary of a list of dictionaries, corresponding to one hyperparameter configuration, or multiple hyperparameter configurations, respectively. (2) When it is a str: if "data", use data-dependent defaults; if "data:path", use data-dependent defaults which are stored at path; if "static", use data-independent defaults. Please find more details about data-dependent defaults in [zero shot AutoML](Zero-Shot-AutoML#combine-zero-shot-automl-and-hyperparameter-tuning).
 
 ### Log the trials
 
@@ -382,7 +478,29 @@ with mlflow.start_run():
 
 ### Extra fit arguments
 
-Extra fit arguments that are needed by the estimators can be passed to `AutoML.fit()`. For example, if there is a weight associated with each training example, they can be passed via `sample_weight`. For another example, `period` can be passed for time series forecaster. For any extra keywork argument passed to `AutoML.fit()` which has not been explicitly listed in the function signature, it will be passed to the underlying estimators' `fit()` as is.
+Extra fit arguments that are needed by the estimators can be passed to `AutoML.fit()`. For example, if there is a weight associated with each training example, they can be passed via `sample_weight`. For another example, `period` can be passed for time series forecaster. For any extra keywork argument passed to `AutoML.fit()` which has not been explicitly listed in the function signature, it will be passed to the underlying estimators' `fit()` as is. For another example, you can set the number of gpus used by each trial with the `gpu_per_trial` argument, which is only used by TransformersEstimator and XGBoostSklearnEstimator.
+
+In addition, you can specify the different arguments needed by different estimators using the `fit_kwargs_by_estimator` argument. For example, you can set the custom arguments for a Transformers model:
+
+```python
+from flaml.automl.data import load_openml_dataset
+from flaml import AutoML
+
+X_train, X_test, y_train, y_test = load_openml_dataset(dataset_id=1169, data_dir="./")
+
+automl = AutoML()
+automl_settings = {
+    "task": "classification",
+    "time_budget": 10,
+    "estimator_list": ["catboost", "rf"],
+    "fit_kwargs_by_estimator": {
+        "catboost": {
+            "verbose": True,  # setting the verbosity of catboost to True
+        }
+    },
+}
+automl.fit(X_train=X_train, y_train=y_train, **automl_settings)
+```
 
 ## Retrieve and analyze the outcomes of AutoML.fit()
 
@@ -396,7 +514,7 @@ print(automl.model)
 # <flaml.model.LGBMEstimator object at 0x7f9b502c4550>
 ```
 
-[`flaml.model.LGBMEstimator`](../reference/model#lgbmestimator-objects) is a wrapper class for LightGBM models. To access the underlying model, use the `estimator` property of the `flaml.model.LGBMEstimator` instance.
+[`flaml.model.LGBMEstimator`](../reference/automl/model#lgbmestimator-objects) is a wrapper class for LightGBM models. To access the underlying model, use the `estimator` property of the `flaml.model.LGBMEstimator` instance.
 
 ```python
 print(automl.model.estimator)
@@ -456,9 +574,9 @@ print(automl.config_history)
 To plot how the loss is improved over time during the model search, first load the search history from the log file:
 
 ```python
-from flaml.data import get_output_from_log
+from flaml.automl.data import get_output_from_log
 
-time_history, best_valid_loss_history, valid_loss_history, config_history, metric_history = \
+time_history, best_valid_loss_history, valid_loss_history, config_history, metric_history =
     get_output_from_log(filename=settings["log_file_name"], time_budget=120)
 ```
 
@@ -488,7 +606,7 @@ The curve suggests that increasing the time budget may further improve the accur
 2. set t2 as the time budget, and also set `early_stop=True`. If the early stopping is triggered, you will see a warning like
 > WARNING - All estimator hyperparameters local search has converged at least once, and the total search time exceeds 10 times the time taken to find the best model.
 
-> WARNING - Stopping search as early_stop is set to True.
+ > WARNING - Stopping search as early_stop is set to True.
 
 ### How much time is needed to find the best model
 
@@ -500,3 +618,5 @@ If you want to get a sense of how much time is needed to find the best model, yo
 > INFO -  at 2.6s,  estimator lgbm's best error=0.4459,     best estimator lgbm's best error=0.4459
 
 You will see that the time to finish the first and cheapest trial is 2.6 seconds. The estimated necessary time budget is 2118 seconds, and the estimated sufficient time budget is 145194 seconds. Note that this is only an estimated range to help you decide your budget.
+
+When the time budget is set too low, it can happen that no estimator is trained at all within the budget. In this case, it is recommanded to use `max_iter` instead of `time_budget`. This ensures that you have enough time to train a model without worring about variance of the execution time for the code before starting a trainning.

@@ -2,9 +2,9 @@
 
 ### Requirements
 
-This example requires GPU. Install the [nlp] option:
+This example requires GPU. Install the [hf] option:
 ```python
-pip install "flaml[nlp]"
+pip install "flaml[hf]"
 ```
 
 ### A simple sequence classification example
@@ -26,7 +26,7 @@ automl = AutoML()
 automl_settings = {
     "time_budget": 100,
     "task": "seq-classification",
-    "fit_kwargs_by_estimator": {  
+    "fit_kwargs_by_estimator": {
         "transformer":
        {
            "output_dir": "data/output/"  # if model_path is not set, the default model is facebook/muppet-roberta-base: https://huggingface.co/facebook/muppet-roberta-base
@@ -36,6 +36,13 @@ automl_settings = {
 }
 automl.fit(X_train=X_train, y_train=y_train, X_val=X_val, y_val=y_val, **automl_settings)
 automl.predict(X_test)
+```
+
+Notice that after you run `automl.fit`, the intermediate checkpoints are saved under the specified output_dir `data/output`. You can use the following code to clean these outputs if they consume a large storage space:
+
+```python
+if os.path.exists("data/output/"):
+    shutil.rmtree("data/output/")
 ```
 
 #### Sample output
@@ -86,8 +93,7 @@ automl_settings["fit_kwargs_by_estimator"] = {  # setting the huggingface argume
     "transformer": {
         "model_path": "google/electra-small-discriminator", # if model_path is not set, the default model is facebook/muppet-roberta-base: https://huggingface.co/facebook/muppet-roberta-base
         "output_dir": "data/output/",                       # setting the output directory
-        "ckpt_per_epoch": 5,                                # setting the number of checkpoints per epoch
-        "fp16": False,  
+        "fp16": False,
     }   # setting whether to use FP16
 }
 automl.fit(
@@ -138,8 +144,7 @@ automl_settings["fit_kwargs_by_estimator"] = {      # setting the huggingface ar
     "transformer": {
         "model_path": "t5-small",             # if model_path is not set, the default model is t5-small: https://huggingface.co/t5-small
         "output_dir": "data/output/",         # setting the output directory
-        "ckpt_per_epoch": 5,                  # setting the number of checkpoints per epoch
-        "fp16": False,  
+        "fp16": False,
     } # setting whether to use FP16
 }
 automl.fit(
@@ -214,10 +219,158 @@ Model config T5Config {
 }
 ```
 
+### A simple token classification example
+
+There are two ways to define the label for a token classification task. The first is to define the token labels:
+
+```python
+from flaml import AutoML
+import pandas as pd
+
+train_dataset = {
+    "id": ["0", "1"],
+    "ner_tags": [
+        ["B-ORG", "O", "B-MISC", "O", "O", "O", "B-MISC", "O", "O"],
+        ["B-PER", "I-PER"],
+    ],
+    "tokens": [
+        [
+            "EU", "rejects", "German", "call", "to", "boycott", "British", "lamb", ".",
+        ],
+        ["Peter", "Blackburn"],
+    ],
+}
+dev_dataset = {
+    "id": ["0"],
+    "ner_tags": [
+        ["O"],
+    ],
+    "tokens": [
+        ["1996-08-22"]
+    ],
+}
+test_dataset = {
+    "id": ["0"],
+    "ner_tags": [
+        ["O"],
+    ],
+    "tokens": [
+        ['.']
+    ],
+}
+custom_sent_keys = ["tokens"]
+label_key = "ner_tags"
+
+train_dataset = pd.DataFrame(train_dataset)
+dev_dataset = pd.DataFrame(dev_dataset)
+test_dataset = pd.DataFrame(test_dataset)
+
+X_train, y_train = train_dataset[custom_sent_keys], train_dataset[label_key]
+X_val, y_val = dev_dataset[custom_sent_keys], dev_dataset[label_key]
+X_test = test_dataset[custom_sent_keys]
+
+automl = AutoML()
+automl_settings = {
+    "time_budget": 10,
+    "task": "token-classification",
+    "fit_kwargs_by_estimator": {
+        "transformer":
+            {
+                "output_dir": "data/output/"
+                # if model_path is not set, the default model is facebook/muppet-roberta-base: https://huggingface.co/facebook/muppet-roberta-base
+            }
+    },  # setting the huggingface arguments: output directory
+    "gpu_per_trial": 1,  # set to 0 if no GPU is available
+    "metric": "seqeval:overall_f1"
+}
+
+automl.fit(X_train=X_train, y_train=y_train, X_val=X_val, y_val=y_val, **automl_settings)
+automl.predict(X_test)
+```
+
+The second is to define the id labels + a token [label list](https://microsoft.github.io/FLAML/docs/reference/nlp/huggingface/training_args):
+
+```python
+from flaml import AutoML
+import pandas as pd
+
+train_dataset = {
+        "id": ["0", "1"],
+        "ner_tags": [
+            [3, 0, 7, 0, 0, 0, 7, 0, 0],
+            [1, 2],
+        ],
+        "tokens": [
+            [
+                "EU", "rejects", "German", "call", "to", "boycott", "British", "lamb", ".",
+            ],
+            ["Peter", "Blackburn"],
+        ],
+    }
+dev_dataset = {
+    "id": ["0"],
+    "ner_tags": [
+        [0],
+    ],
+    "tokens": [
+        ["1996-08-22"]
+    ],
+}
+test_dataset = {
+    "id": ["0"],
+    "ner_tags": [
+        [0],
+    ],
+    "tokens": [
+        ['.']
+    ],
+}
+custom_sent_keys = ["tokens"]
+label_key = "ner_tags"
+
+train_dataset = pd.DataFrame(train_dataset)
+dev_dataset = pd.DataFrame(dev_dataset)
+test_dataset = pd.DataFrame(test_dataset)
+
+X_train, y_train = train_dataset[custom_sent_keys], train_dataset[label_key]
+X_val, y_val = dev_dataset[custom_sent_keys], dev_dataset[label_key]
+X_test = test_dataset[custom_sent_keys]
+
+automl = AutoML()
+automl_settings = {
+    "time_budget": 10,
+    "task": "token-classification",
+    "fit_kwargs_by_estimator": {
+        "transformer":
+            {
+                "output_dir": "data/output/",
+                # if model_path is not set, the default model is facebook/muppet-roberta-base: https://huggingface.co/facebook/muppet-roberta-base
+                "label_list": [ "O","B-PER", "I-PER", "B-ORG", "I-ORG", "B-LOC", "I-LOC", "B-MISC", "I-MISC" ]
+            }
+    },  # setting the huggingface arguments: output directory
+    "gpu_per_trial": 1,  # set to 0 if no GPU is available
+    "metric": "seqeval:overall_f1"
+}
+
+automl.fit(X_train=X_train, y_train=y_train, X_val=X_val, y_val=y_val, **automl_settings)
+automl.predict(X_test)
+```
+
+#### Sample Output
+
+```
+[flaml.automl: 06-30 03:10:02] {2423} INFO - task = token-classification
+[flaml.automl: 06-30 03:10:02] {2425} INFO - Data split method: stratified
+[flaml.automl: 06-30 03:10:02] {2428} INFO - Evaluation method: holdout
+[flaml.automl: 06-30 03:10:02] {2497} INFO - Minimizing error metric: seqeval:overall_f1
+[flaml.automl: 06-30 03:10:02] {2637} INFO - List of ML learners in AutoML Run: ['transformer']
+[flaml.automl: 06-30 03:10:02] {2929} INFO - iteration 0, current learner transformer
+```
+
 For tasks that are not currently supported, use `flaml.tune` for [customized tuning](Tune-HuggingFace).
 
 ### Link to Jupyter notebook
 
-To run these examples in our Jupyter notebook, please go to:
+To run more examples, especially examples using Ray Tune, please go to:
 
 [Link to notebook](https://github.com/microsoft/FLAML/blob/main/notebook/automl_nlp.ipynb) | [Open in colab](https://colab.research.google.com/github/microsoft/FLAML/blob/main/notebook/automl_nlp.ipynb)

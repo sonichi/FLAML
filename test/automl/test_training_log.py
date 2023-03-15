@@ -5,14 +5,13 @@ from tempfile import TemporaryDirectory
 from sklearn.datasets import fetch_california_housing
 
 from flaml import AutoML
-from flaml.training_log import training_log_reader
+from flaml.automl.training_log import training_log_reader
 
 
 class TestTrainingLog(unittest.TestCase):
     def test_training_log(
         self, path="test_training_log.log", estimator_list="auto", use_ray=False
     ):
-
         with TemporaryDirectory() as d:
             filename = os.path.join(d, path)
 
@@ -40,10 +39,12 @@ class TestTrainingLog(unittest.TestCase):
             if automl.best_estimator:
                 estimator, config = automl.best_estimator, automl.best_config
                 model0 = automl.best_model_for_estimator(estimator)
-                print(model0.params["n_estimators"], config)
+                print(model0.params)
+                if "n_estimators" in config:
+                    assert model0.params["n_estimators"] == config["n_estimators"]
 
                 # train on full data with no time limit
-                automl._state.time_budget = None
+                automl._state.time_budget = -1
                 model, _ = automl._state._train_with_config(estimator, config)
 
                 # assuming estimator & config are saved and loaded as follows
@@ -89,7 +90,8 @@ class TestTrainingLog(unittest.TestCase):
 
             automl_settings["log_file_name"] = ""
             automl.fit(X_train=X_train, y_train=y_train, **automl_settings)
-            automl._selected.update(None, 0)
+            if automl._selected:
+                automl._selected.update(None, 0)
             automl = AutoML()
             automl.fit(X_train=X_train, y_train=y_train, max_iter=0, task="regression")
 

@@ -28,7 +28,7 @@ module.exports = {
         },
         {
             type: 'doc',
-            docId: 'reference/automl',
+            docId: 'reference/automl/automl',
             position: 'left',
             label: 'SDK',
         },
@@ -131,4 +131,3 @@ module.exports = {
     ],
   ],
 };
-

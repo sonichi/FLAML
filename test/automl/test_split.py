@@ -1,6 +1,6 @@
 from sklearn.datasets import fetch_openml
 from flaml.automl import AutoML
-from sklearn.model_selection import train_test_split, KFold
+from sklearn.model_selection import GroupKFold, train_test_split, KFold
 from sklearn.metrics import accuracy_score
 
 
@@ -80,6 +80,46 @@ def test_groups():
     automl_settings["eval_method"] = "holdout"
     automl.fit(X, y, **automl_settings)
 
+    automl_settings["split_type"] = GroupKFold(n_splits=3)
+    try:
+        automl.fit(X, y, **automl_settings)
+        raise RuntimeError(
+            "GroupKFold object as split_type should fail when eval_method is holdout"
+        )
+    except AssertionError:
+        # eval_method must be 'auto' or 'cv' for custom data splitter.
+        pass
+
+    automl_settings["eval_method"] = "cv"
+    automl.fit(X, y, **automl_settings)
+
+
+def test_stratified_groupkfold():
+    from sklearn.model_selection import StratifiedGroupKFold
+    from flaml.data import load_openml_dataset
+
+    X_train, _, y_train, _ = load_openml_dataset(dataset_id=1169, data_dir="test/")
+    splitter = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=0)
+
+    automl = AutoML()
+    settings = {
+        "time_budget": 6,
+        "metric": "ap",
+        "eval_method": "cv",
+        "split_type": splitter,
+        "groups": X_train["Airline"],
+        "estimator_list": [
+            "lgbm",
+            "rf",
+            "xgboost",
+            "extra_tree",
+            "xgb_limitdepth",
+            "lrl1",
+        ],
+    }
+
+    automl.fit(X_train=X_train, y_train=y_train, **settings)
+
 
 def test_rank():
     from sklearn.externals._arff import ArffException
@@ -150,13 +190,20 @@ def test_object():
     automl = AutoML()
     automl_settings = {
         "time_budget": 2,
-        # "metric": 'accuracy',
         "task": "classification",
         "log_file_name": "test/{}.log".format(dataset),
         "model_history": True,
         "log_training_metric": True,
         "split_type": TestKFold(5),
     }
+    automl.fit(X, y, **automl_settings)
+    assert (
+        automl._state.eval_method == "cv"
+    ), "eval_method must be 'cv' for custom data splitter"
+
+    kf = TestKFold(5)
+    kf.shuffle = True
+    automl_settings["split_type"] = kf
     automl.fit(X, y, **automl_settings)
 
 

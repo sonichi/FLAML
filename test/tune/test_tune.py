@@ -1,6 +1,6 @@
 """Require: pip install flaml[test,ray]
 """
-from flaml.searcher.blendsearch import BlendSearch
+from flaml import BlendSearch
 import time
 import os
 from sklearn.model_selection import train_test_split
@@ -18,6 +18,38 @@ logger = logging.getLogger(__name__)
 os.makedirs("logs", exist_ok=True)
 logger.addHandler(logging.FileHandler("logs/tune.log"))
 logger.setLevel(logging.INFO)
+
+
+def test_nested_run():
+    from flaml import AutoML, tune
+
+    data, labels = sklearn.datasets.load_breast_cancer(return_X_y=True)
+    train_x, val_x, y_train, y_val = train_test_split(data, labels, test_size=0.25)
+    space_pca = {
+        "n_components": tune.uniform(0.5, 0.99),
+    }
+
+    def pca_flaml(config):
+        n_components = config["n_components"]
+        from sklearn.decomposition import PCA
+
+        pca = PCA(n_components)
+        X_train = pca.fit_transform(train_x)
+        X_val = pca.transform(val_x)
+        automl = AutoML()
+        automl.fit(X_train, y_train, X_val=X_val, y_val=y_val, time_budget=1)
+        return {"loss": automl.best_loss}
+
+    analysis = tune.run(
+        pca_flaml,
+        space_pca,
+        metric="loss",
+        mode="min",
+        num_samples=5,
+        log_file_name="logs/create/nested.log",
+        verbose=3,
+    )
+    print(analysis.best_result)
 
 
 def train_breast_cancer(config: dict):
@@ -113,7 +145,7 @@ def _test_xgboost(method="BlendSearch"):
                         },
                     )
                 elif "CFOCat" == method:
-                    from flaml.searcher.cfo_cat import CFOCat
+                    from flaml.tune.searcher.cfo_cat import CFOCat
 
                     algo = CFOCat(
                         low_cost_partial_config={
@@ -182,7 +214,7 @@ def _test_xgboost(method="BlendSearch"):
             logger.info(f"Best model parameters: {best_trial.config}")
 
 
-def test_nested():
+def test_nested_space():
     from flaml import tune, CFO
 
     search_space = {

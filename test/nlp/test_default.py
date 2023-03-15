@@ -1,6 +1,9 @@
 from utils import get_toy_data_seqclassification, get_automl_settings
 import sys
 from flaml.default import portfolio
+import os
+import shutil
+import pytest
 
 
 def pop_args(fit_kwargs):
@@ -16,6 +19,7 @@ def test_build_portfolio(path="./test/nlp/default", strategy="greedy"):
     portfolio.main()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="do not run on windows")
 def test_starting_point_not_in_search_space():
     from flaml import AutoML
 
@@ -34,7 +38,8 @@ def test_starting_point_not_in_search_space():
 
     automl.fit(X_train, y_train, **automl_settings)
     assert (
-        automl._search_states[this_estimator_name].init_config["learning_rate"] != 2e-3
+        automl._search_states[this_estimator_name].init_config[0]["learning_rate"]
+        != 2e-3
     )
 
     """
@@ -57,21 +62,37 @@ def test_starting_point_not_in_search_space():
             "learning_rate": {
                 "domain": tune.choice([1e-4, 1e-5]),
             },
+            "per_device_train_batch_size": {
+                "domain": 2,
+            },
         }
     }
     automl_settings["starting_points"] = "data:test/nlp/default/"
-    del automl_settings["fit_kwargs_by_estimator"][this_estimator_name]["model_path"]
 
     automl.fit(X_train, y_train, **automl_settings)
-    assert (
-        len(automl._search_states[this_estimator_name].init_config) == 0
-    )  # check that init config is not updated, but search space is updated
+    assert len(automl._search_states[this_estimator_name].init_config[0]) == len(
+        automl._search_states[this_estimator_name]._search_space_domain
+    ) - len(automl_settings["custom_hp"][this_estimator_name]), (
+        "The search space is updated with the custom_hp on {} hyperparameters of "
+        "the specified estimator without an initial value. Thus a valid init config "
+        "should only contain the cardinality of the search space minus {}".format(
+            len(automl_settings["custom_hp"][this_estimator_name]),
+            len(automl_settings["custom_hp"][this_estimator_name]),
+        )
+    )
     assert (
         automl._search_states[this_estimator_name].search_space["model_path"]
         == "albert-base-v2"
     )
 
+    if os.path.exists("test/data/output/"):
+        try:
+            shutil.rmtree("test/data/output/")
+        except PermissionError:
+            print("PermissionError when deleting test/data/output/")
 
+
+@pytest.mark.skipif(sys.platform == "win32", reason="do not run on windows")
 def test_points_to_evaluate():
     from flaml import AutoML
 
@@ -80,15 +101,25 @@ def test_points_to_evaluate():
     automl = AutoML()
     automl_settings = get_automl_settings(estimator_name="transformer_ms")
 
-    automl_settings["estimator_list"] = ["transformer_ms"]
-    automl_settings["starting_points"] = "data"
+    automl_settings["starting_points"] = "data:test/nlp/default/"
 
-    del automl_settings["fit_kwargs_by_estimator"]["transformer_ms"]["model_path"]
+    automl_settings["custom_hp"] = {
+        "transformer_ms": {
+            "model_path": {"domain": "google/electra-small-discriminator"}
+        }
+    }
 
     automl.fit(X_train, y_train, **automl_settings)
 
+    if os.path.exists("test/data/output/"):
+        try:
+            shutil.rmtree("test/data/output/")
+        except PermissionError:
+            print("PermissionError when deleting test/data/output/")
+
 
 # TODO: implement _test_zero_shot_model
+@pytest.mark.skipif(sys.platform == "win32", reason="do not run on windows")
 def test_zero_shot_nomodel():
     from flaml.default import preprocess_and_suggest_hyperparams
 
@@ -98,8 +129,6 @@ def test_zero_shot_nomodel():
     X_train, y_train, X_val, y_val, X_test = get_toy_data_seqclassification()
 
     automl_settings = get_automl_settings(estimator_name)
-
-    del automl_settings["fit_kwargs_by_estimator"][estimator_name]["model_path"]
 
     (
         hyperparams,
@@ -121,6 +150,12 @@ def test_zero_shot_nomodel():
     pop_args(fit_kwargs)
     model.fit(X_train, y_train, **fit_kwargs)
 
+    if os.path.exists("test/data/output/"):
+        try:
+            shutil.rmtree("test/data/output/")
+        except PermissionError:
+            print("PermissionError when deleting test/data/output/")
+
 
 def test_build_error_portfolio(path="./test/nlp/default", strategy="greedy"):
     import os
@@ -136,10 +171,6 @@ def test_build_error_portfolio(path="./test/nlp/default", strategy="greedy"):
     location = "test/nlp/default"
     X_train, y_train, X_val, y_val, X_test = get_toy_data_seqclassification()
 
-    automl_settings = get_automl_settings(estimator_name)
-
-    del automl_settings["fit_kwargs_by_estimator"][estimator_name]["model_path"]
-
     try:
         (
             hyperparams,
@@ -153,3 +184,12 @@ def test_build_error_portfolio(path="./test/nlp/default", strategy="greedy"):
         )
     except ValueError:
         print("Feature not implemented")
+
+    import os
+    import shutil
+
+    if os.path.exists("test/data/output/"):
+        try:
+            shutil.rmtree("test/data/output/")
+        except PermissionError:
+            print("PermissionError when deleting test/data/output/")
